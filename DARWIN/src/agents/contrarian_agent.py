@@ -59,7 +59,17 @@ class ContrarianAgent(BaseAgent):
                 signals[asset] = 'HOLD'
         return signals
 
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Two-layer adaptation:
+          1. Mild reversal_strength tweak based on sign of return (existing).
+             - Losing  → raise threshold (only fade bigger extremes).
+             - Winning → lower threshold (act on smaller dislocations).
+          2. Strong parameter mutation when flagged as an underperformer
+             by the reallocation layer.
+        """
+        # ---- Layer 1: existing reversal_strength tweak ----
         ret = performance_metrics.get('return', 0.0)
         if ret < 0:
             self.params['reversal_strength'] *= 1.1
@@ -68,3 +78,8 @@ class ContrarianAgent(BaseAgent):
         self.params['reversal_strength'] = max(
             0.5, min(2.5, self.params['reversal_strength'])
         )
+
+        # ---- Layer 2: strong mutation if flagged ----
+        if mutation_info and mutation_info.get('needs_mutation'):
+            strength = mutation_info.get('strength', 0.1)
+            self.mutate(strength=strength)

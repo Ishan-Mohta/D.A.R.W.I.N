@@ -63,7 +63,15 @@ class MomentumAgent(BaseAgent):
                 signals[asset] = 'HOLD'
         return signals
 
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Two-layer adaptation:
+          1. Mild sensitivity tweak based on sign of return (existing logic).
+          2. Strong parameter mutation when flagged as an underperformer
+             by the reallocation layer (via `mutation_info`).
+        """
+        # ---- Layer 1: existing mild sensitivity tweak ----
         ret = performance_metrics.get('return', 0.0)
         if ret < 0:
             self.params['sensitivity'] *= 0.9
@@ -72,3 +80,10 @@ class MomentumAgent(BaseAgent):
         self.params['sensitivity'] = max(
             0.3, min(2.0, self.params['sensitivity'])
         )
+
+        # ---- Layer 2: strong mutation if flagged ----
+        if mutation_info and mutation_info.get('needs_mutation'):
+            strength = mutation_info.get('strength', 0.1)
+            changes = self.mutate(strength=strength)
+            # Changes are logged automatically by the backtester via
+            # get_params() diffing — nothing else to do here.

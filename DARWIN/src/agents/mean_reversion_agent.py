@@ -69,7 +69,17 @@ class MeanReversionAgent(BaseAgent):
                 signals[asset] = 'HOLD'
         return signals
 
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Two-layer adaptation:
+          1. Mild z_threshold tweak based on sign of return (existing logic).
+             - Losing → widen threshold (be pickier about entries).
+             - Winning → tighten threshold (allow more trades).
+          2. Strong parameter mutation when flagged as an underperformer
+             by the reallocation layer.
+        """
+        # ---- Layer 1: existing mild z_threshold tweak ----
         ret = performance_metrics.get('return', 0.0)
         if ret < 0:
             self.params['z_threshold'] *= 1.1
@@ -78,3 +88,8 @@ class MeanReversionAgent(BaseAgent):
         self.params['z_threshold'] = max(
             1.0, min(3.5, self.params['z_threshold'])
         )
+
+        # ---- Layer 2: strong mutation if flagged ----
+        if mutation_info and mutation_info.get('needs_mutation'):
+            strength = mutation_info.get('strength', 0.1)
+            self.mutate(strength=strength)
