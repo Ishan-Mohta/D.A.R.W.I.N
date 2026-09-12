@@ -42,14 +42,10 @@ Traditional trading systems often rely on fixed strategies and allocations. When
 | **Reactive Risk Management:** Risk controls are often external to the strategy | **Deterministic Risk Firewall:** Independent guardrails verify decisions before execution |
 
 ---
-
-# Track 1 Alignment
-
 | Subtrack | Feature Implemented | Technical Mechanism |
 |---|---|---|
 | **Subtrack 1 — Agentic Workflows** | Autonomous Trading Swarm | Each agent follows an asynchronous `Observe → Plan → Act → Audit` execution pipeline |
 | **Subtrack 2 — Self-Learning & Adaptation** | Dynamic Capital Reallocation & Mutation | Temperature-scaled Softmax reallocates capital according to agent performance; underperformers trigger hyperparameter mutation |
-| **Subtrack 3 — Guardrails & Trust** | Risk Firewall & Circuit Breakers | LLM-generated prices are verified against market data within a defined tolerance; trade-level risk limits and portfolio drawdown circuit breakers prevent unsafe actions |
 
 ---
 
