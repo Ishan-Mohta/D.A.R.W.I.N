@@ -108,17 +108,29 @@ class Backtester:
                 # Adapt params BEFORE redistribution so agents see
                 # metrics from the period that just ended.
                 for agent in self.agents:
+                    aid = agent.name
+                    agent_metrics = metrics.get(aid, {})
+                    mutation_info = agent_metrics.get('mutation', {})
+
                     before = agent.get_params()
-                    agent.adapt_parameters(metrics[agent.name])
+                    agent.adapt_parameters(
+                        agent_metrics,
+                        mutation_info=mutation_info,
+                    )
                     after = agent.get_params()
+
                     for k in before:
                         if before[k] != after[k]:
                             param_changes.append({
                                 'date': str(date.date()),
-                                'agent': agent.name,
+                                'agent': aid,
                                 'param': k,
                                 'old': round(float(before[k]), 6),
                                 'new': round(float(after[k]), 6),
+                                'reason': mutation_info.get('reason', 'adaptive'),
+                                'strength': round(
+                                    mutation_info.get('strength', 0.0), 3
+                                ),
                             })
 
                 self.broker.redistribute_capital(new_alloc, prices, date)

@@ -45,6 +45,7 @@ def compute_new_allocations(
     floor_pct = config.get('min_agent_capital_pct', 0.01)
     raw = {aid: max(w, floor_pct) for aid, w in raw.items()}
 
+    
     # ---- Step 5: drawdown kill-switch ----
     killed = set()
     max_dd = config.get('max_agent_drawdown', -1.0)
@@ -54,10 +55,41 @@ def compute_new_allocations(
             killed.add(aid)
             logger.warning(f"KILL: {aid} hit drawdown {dd:.2%} < {max_dd:.2%}")
 
+    # ---- Step 5.5: FLAG LOSERS FOR MUTATION ----
+    # Any bot with negative return gets flagged for parameter mutation.
+    # The actual mutation happens in backtester.py via agent.mutate().
+    # Stronger losses = stronger mutation (bigger exploration).
+    mutation_threshold = config.get('mutation_threshold', -0.02)
+    for aid in ids:
+        r = returns[aid]
+        if r < mutation_threshold:
+            # Absolute loss trigger — force mutation
+            strength = min(abs(r) * 5.0, 1.0)
+            agent_metrics[aid]['mutation'] = {
+                'needs_mutation': True,
+                'strength': strength,
+                'reason': f"loss {r:.2%}",
+            }
+            logger.info(
+                f"MUTATE FLAG: {aid} return={r:.2%} strength={strength:.2f}"
+            )
+        elif r < 0:
+            # Small loss but above threshold — mild mutation
+            agent_metrics[aid]['mutation'] = {
+                'needs_mutation': True,
+                'strength': 0.05,
+                'reason': f"small loss {r:.2%}",
+            }
+        else:
+            # Winner or flat — no mutation
+            agent_metrics[aid]['mutation'] = {
+                'needs_mutation': False,
+                'strength': 0.0,
+                'reason': 'positive',
+            }
+
     # ---- Step 6: dollar allocations ----
     new_caps = {aid: raw[aid] * current_total_pool for aid in ids}
-    for aid in killed:
-        new_caps[aid] = floor_pct * current_total_pool
 
     # ---- Step 7: renormalize to pool ----
     total = sum(new_caps.values())

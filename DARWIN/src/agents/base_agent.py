@@ -11,6 +11,7 @@ RISK APPETITE:
   risk_level from a Gaussian centered on the user's choice.
 """
 
+import random
 from abc import ABC, abstractmethod
 from typing import Dict, List, Union
 
@@ -73,15 +74,73 @@ class BaseAgent(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
-        """Mutate self.params based on period performance."""
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Mutate self.params based on period performance.
+
+        mutation_info: dict from reallocation.py with keys
+                       'needs_mutation' (bool) and 'strength' (float).
+        """
         raise NotImplementedError
+
+    # ------------------------------------------------------------------
+    # MUTATION — used by subclasses when flagged as underperformers
+    # ------------------------------------------------------------------
+    def mutate(self, strength: float = 0.2) -> Dict:
+        """
+        Perturb parameters to explore new behavior. Called when the agent
+        has been flagged as an underperformer.
+
+        strength: 0.0 = no change, 1.0 = maximum chaos
+        Returns: dict of {param_name: (old_value, new_value)} for logging.
+        """
+        changes = {}
+        strength = max(0.0, min(1.0, strength))
+
+        # --- 1. Risk level (the big lever) ---
+        # On mutation, a loser can swing risk dramatically in either
+        # direction. If losing badly, we're equally willing to try
+        # "much safer" or "much more aggressive" — evolution doesn't
+        # have a bias toward either.
+        old_risk = self.risk_level
+        delta_risk = random.gauss(0.0, strength * 3.0)  # up to ±3 at max
+        self.risk_level = max(0.5, min(10.0, old_risk + delta_risk))
+        if abs(self.risk_level - old_risk) > 1e-6:
+            changes['risk_level'] = (old_risk, self.risk_level)
+
+        # --- 2. Numeric params in self.params ---
+        # Every subclass stores its strategy-specific tunables here.
+        # We perturb each one proportionally.
+        for key, old_val in list(self.params.items()):
+            if not isinstance(old_val, (int, float)):
+                continue  # skip non-numeric params
+
+            # Perturbation magnitude scales with the size of the param
+            # so that big numbers aren't mutated into oblivion.
+            scale = max(abs(old_val), 0.1)
+            delta = random.gauss(0.0, strength * scale * 0.5)
+            new_val = old_val + delta
+
+            # Keep signs sane (don't flip lookback from +10 to -10)
+            if old_val >= 0:
+                new_val = max(0.0, new_val)
+            if isinstance(old_val, int):
+                new_val = int(round(new_val))
+
+            self.params[key] = new_val
+            changes[key] = (old_val, new_val)
+
+        return changes
 
     # ------------------------------------------------------------------
     # HELPERS
     # ------------------------------------------------------------------
     def get_params(self) -> Dict:
-        return dict(self.params)
+        """All tunable parameters, including risk_level, for logging."""
+        p = dict(self.params)
+        p['risk_level'] = self.risk_level
+        return p
 
     def __repr__(self) -> str:
         return (f"<{self.__class__.__name__} name={self.name} "

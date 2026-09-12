@@ -88,7 +88,17 @@ class RiskParityAgent(BaseAgent):
                 signals[asset] = 'HOLD'
         return signals
 
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Two-layer adaptation:
+          1. Mild vol_lookback tweak based on sign of return (existing logic).
+             - Losing  → widen window (smooth out noise, be more stable).
+             - Winning → shrink window (react faster to regime shifts).
+          2. Strong parameter mutation when flagged as an underperformer
+             by the reallocation layer.
+        """
+        # ---- Layer 1: existing vol_lookback tweak ----
         ret = performance_metrics.get('return', 0.0)
         if ret < 0:
             self.params['vol_lookback'] = min(
@@ -98,3 +108,8 @@ class RiskParityAgent(BaseAgent):
             self.params['vol_lookback'] = max(
                 10, self.params['vol_lookback'] - 2
             )
+
+        # ---- Layer 2: strong mutation if flagged ----
+        if mutation_info and mutation_info.get('needs_mutation'):
+            strength = mutation_info.get('strength', 0.1)
+            self.mutate(strength=strength)

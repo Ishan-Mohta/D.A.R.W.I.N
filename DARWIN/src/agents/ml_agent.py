@@ -138,42 +138,57 @@ class MLAgent(BaseAgent):
         return signals
 
     # ------------------------------------------------------------------
-    def adapt_parameters(self, performance_metrics: Dict) -> None:
-        if len(self.feature_history) < 10:
-            return
+    def adapt_parameters(self, performance_metrics: Dict,
+                         mutation_info: Dict = None) -> None:
+        """
+        Two-layer adaptation:
+          1. Correlation-based feature reweighting (existing logic).
+             Uses feature_history to find which of momentum / volatility /
+             volume best predicted next-day returns, and shifts weights.
+          2. Strong parameter mutation when flagged as an underperformer
+             by the reallocation layer.
+        """
+        # ---- Layer 1: correlation-based reweighting (existing) ----
+        if len(self.feature_history) >= 10:
+            arr = np.array(self.feature_history)
+            feats = arr[:, :3]
+            next_rets = arr[:, 3]
 
-        arr = np.array(self.feature_history)
-        feats = arr[:, :3]
-        next_rets = arr[:, 3]
+            if np.std(next_rets) != 0:
+                corrs = []
+                for j in range(3):
+                    if np.std(feats[:, j]) == 0:
+                        corrs.append(0.0)
+                    else:
+                        corrs.append(
+                            float(np.corrcoef(feats[:, j], next_rets)[0, 1])
+                        )
+                corrs = np.nan_to_num(np.array(corrs))
 
-        if np.std(next_rets) == 0:
-            return
+                best = int(np.argmax(np.abs(corrs)))
+                worst = int(np.argmin(np.abs(corrs)))
 
-        corrs = []
-        for j in range(3):
-            if np.std(feats[:, j]) == 0:
-                corrs.append(0.0)
-            else:
-                corrs.append(float(np.corrcoef(feats[:, j], next_rets)[0, 1]))
-        corrs = np.nan_to_num(np.array(corrs))
+                weights = [self.params['w_momentum'],
+                           self.params['w_volatility'],
+                           self.params['w_volume']]
 
-        best = int(np.argmax(np.abs(corrs)))
-        worst = int(np.argmin(np.abs(corrs)))
+                weights[best] += 0.1 * np.sign(corrs[best])
+                weights[worst] -= (
+                    0.1 * np.sign(corrs[worst]) if corrs[worst] != 0 else 0.0
+                )
 
-        weights = [self.params['w_momentum'],
-                   self.params['w_volatility'],
-                   self.params['w_volume']]
+                if weights[1] > 0:
+                    weights[1] = -abs(weights[1])
 
-        weights[best] += 0.1 * np.sign(corrs[best])
-        weights[worst] -= 0.1 * np.sign(corrs[worst]) if corrs[worst] != 0 else 0.0
+                total = sum(abs(w) for w in weights)
+                if total > 0:
+                    weights = [w / total for w in weights]
 
-        if weights[1] > 0:
-            weights[1] = -abs(weights[1])
+                self.params['w_momentum'] = weights[0]
+                self.params['w_volatility'] = weights[1]
+                self.params['w_volume'] = weights[2]
 
-        total = sum(abs(w) for w in weights)
-        if total > 0:
-            weights = [w / total for w in weights]
-
-        self.params['w_momentum'] = weights[0]
-        self.params['w_volatility'] = weights[1]
-        self.params['w_volume'] = weights[2]
+        # ---- Layer 2: strong mutation if flagged ----
+        if mutation_info and mutation_info.get('needs_mutation'):
+            strength = mutation_info.get('strength', 0.1)
+            self.mutate(strength=strength)
