@@ -1,0 +1,1 @@
+"""Evolutionary Investment Platform — root package."""

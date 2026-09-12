@@ -1,0 +1,292 @@
+"""
+Streamlit dashboard for the Evolutionary Investment Platform.
+Run: streamlit run dashboard/app.py
+"""
+
+import json
+import os
+import sys
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# Make src/ importable when running from project root
+sys.path.insert(0, os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..')
+))
+
+from src.agents.registry import STRATEGY_REGISTRY
+from src.main import run_platform
+
+st.set_page_config(
+    page_title="Evolutionary Investment Platform",
+    layout="wide",
+    page_icon="🧬",
+)
+
+st.title("🧬 Evolutionary Investment Platform")
+st.caption("Multi-agent backtesting where bots compete for capital and evolve.")
+
+# =====================================================================
+# SIDEBAR CONFIG
+# =====================================================================
+st.sidebar.header("⚙️ Configuration")
+
+num_agents = st.sidebar.slider(
+    "Number of agents", 3, 15, 5,
+    help="How many bots compete (duplicates auto-suffixed)"
+)
+
+strategy_choice = st.sidebar.multiselect(
+    "Strategies (empty = use agent count)",
+    options=list(STRATEGY_REGISTRY.keys()),
+    default=[],
+)
+
+capital = st.sidebar.number_input(
+    "Starting capital ($)",
+    min_value=1_000.0, value=100_000.0, step=10_000.0,
+)
+
+freq = st.sidebar.radio(
+    "Rebalance frequency",
+    options=['W', 'M', 'Q'],
+    index=1,
+    format_func=lambda x: {'W': 'Weekly', 'M': 'Monthly', 'Q': 'Quarterly'}[x],
+)
+
+# =====================================================================
+# ⭐ THE FLAGSHIP CONTROLS
+# =====================================================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("🎯 Risk Appetite")
+st.sidebar.caption("These two values control the entire fleet's behavior.")
+
+user_risk = st.sidebar.slider(
+    "Risk appetite (0-10)",
+    min_value=0.0, max_value=10.0, value=5.0, step=0.5,
+    help="CENTER of the bell curve. Each bot samples its own risk "
+         "level from a distribution centered here."
+)
+
+risk_std = st.sidebar.slider(
+    "Risk deviation (std-dev)",
+    min_value=0.1, max_value=2.0, value=0.7, step=0.1,
+    help="WIDTH of the bell curve. Higher = more diversity in the "
+         "fleet's risk levels."
+)
+
+st.sidebar.markdown("---")
+
+assets_input = st.sidebar.text_input(
+    "Assets (comma-separated)", value="AAPL,GOOGL,MSFT,SPY"
+)
+
+run_clicked = st.sidebar.button("🚀 Run Backtest", type="primary")
+
+# =====================================================================
+# STATE
+# =====================================================================
+if 'results' not in st.session_state:
+    st.session_state.results = None
+
+if run_clicked:
+    assets = [a.strip().upper() for a in assets_input.split(',') if a.strip()]
+    if len(assets) < 2:
+        st.sidebar.error("Need at least 2 assets.")
+    else:
+        selection = strategy_choice if strategy_choice else num_agents
+        overrides = {
+            'num_agents': num_agents,
+            'agent_selection': selection,
+            'initial_capital': capital,
+            'rebalance_freq': freq,
+            'assets': assets,
+            'benchmark': assets[-1],
+            'user_risk_appetite': user_risk,
+            'risk_distribution_std': risk_std,
+        }
+        with st.spinner("Running backtest..."):
+            try:
+                results = run_platform(overrides)
+                st.session_state.results = results
+            except Exception as e:
+                st.error(f"Backtest failed: {e}")
+                st.exception(e)
+
+# =====================================================================
+# RESULTS
+# =====================================================================
+results = st.session_state.results
+
+if results is None:
+    st.info("👈 Configure your platform in the sidebar and click **Run Backtest**.")
+    st.stop()
+
+# ---- Show the risk distribution FIRST (the money shot) ----
+st.subheader("🎯 Risk Distribution of the Fleet")
+st.caption(
+    f"User set risk = **{results['risk_appetite']:.1f}** with deviation "
+    f"**{results['risk_std']:.1f}**. Each bot sampled its own risk from "
+    f"this distribution."
+)
+
+risk_data = pd.DataFrame([
+    {'Agent': aid, 'Risk': m.get('risk_level', 5.0)}
+    for aid, m in results['agent_metrics'].items()
+]).sort_values('Risk', ascending=False).reset_index(drop=True)
+
+fig_risk = px.bar(
+    risk_data, x='Agent', y='Risk', color='Risk',
+    color_continuous_scale='RdYlGn_r',
+    text='Risk',
+)
+fig_risk.update_traces(texttemplate='%{text:.2f}', textposition='outside')
+fig_risk.add_hline(
+    y=results['risk_appetite'], line_dash="dash", line_color="blue",
+    annotation_text=f"Your setting: {results['risk_appetite']:.1f}",
+)
+fig_risk.update_layout(yaxis_range=[0, 10.5])
+st.plotly_chart(fig_risk, use_container_width=True)
+
+# ---- Row 1: metric cards ----
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Final Pool", f"${results['final_pool']:,.0f}")
+c2.metric("Total Return", f"{results['final_return'] * 100:+.2f}%")
+c3.metric("Starting Capital",
+          f"${results['config']['initial_capital']:,.0f}")
+c4.metric(f"Benchmark ({results['config']['benchmark']})",
+          f"{results['benchmark_return'] * 100:+.2f}%")
+
+# ---- Row 2: leaderboard ----
+st.subheader("🏆 Agent Leaderboard")
+
+metrics = results['agent_metrics']
+alloc_hist = results['allocation_history']
+
+final_caps = {}
+if alloc_hist:
+    last = alloc_hist[-1]['agents']
+    for aid, d in last.items():
+        final_caps[aid] = d['new_cap']
+else:
+    n = len(metrics)
+    for aid in metrics:
+        final_caps[aid] = results['config']['initial_capital'] / n
+
+rows = []
+for aid, m in metrics.items():
+    rows.append({
+        'Agent': aid,
+        'Risk': round(m.get('risk_level', 5.0), 2),
+        'MaxPos %': round(m.get('max_position_size', 0.15) * 100, 1),
+        'Return %': round(m['return'] * 100, 2),
+        'Sharpe': round(m['sharpe'], 2),
+        'Max DD %': round(m['max_drawdown'] * 100, 2),
+        'Win Rate %': round(m['win_rate'] * 100, 1),
+        'Final Cap': round(final_caps.get(aid, 0.0), 2),
+        'Trades': m['num_trades'],
+    })
+lb = (pd.DataFrame(rows)
+        .sort_values('Return %', ascending=False)
+        .reset_index(drop=True))
+lb.insert(0, 'Rank', range(1, len(lb) + 1))
+st.dataframe(lb, use_container_width=True)
+
+# ---- Row 3: bar + scatter ----
+col_a, col_b = st.columns(2)
+
+with col_a:
+    st.subheader("Returns by Agent")
+    fig = px.bar(lb, x='Agent', y='Return %', color='Agent', text='Return %')
+    fig.update_traces(texttemplate='%{text:.2f}%', textposition='outside')
+    st.plotly_chart(fig, use_container_width=True)
+
+with col_b:
+    st.subheader("Risk vs Return")
+    fig = px.scatter(
+        lb, x='Risk', y='Return %',
+        size='Final Cap', color='Agent', hover_name='Agent',
+        text='Agent',
+    )
+    fig.add_vline(x=results['risk_appetite'], line_dash="dash",
+                  line_color="gray",
+                  annotation_text="Your setting")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---- Row 4: pie + line ----
+col_c, col_d = st.columns(2)
+
+with col_c:
+    st.subheader("Final Capital Distribution")
+    fig = px.pie(lb, names='Agent', values='Final Cap', hole=0.4)
+    st.plotly_chart(fig, use_container_width=True)
+
+with col_d:
+    st.subheader("Total Portfolio Value")
+    df = pd.DataFrame({
+        'Date': pd.to_datetime(results['dates']),
+        'Value': results['portfolio_values'],
+    })
+    fig = px.line(df, x='Date', y='Value')
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---- Row 5: allocation timeline ----
+st.subheader("📈 Capital Allocation Over Time")
+if alloc_hist:
+    timeline_rows = []
+    for snap in alloc_hist:
+        for aid, d in snap['agents'].items():
+            timeline_rows.append({
+                'Date': pd.to_datetime(snap['timestamp']),
+                'Agent': aid,
+                'Capital': d['new_cap'],
+            })
+    tl = pd.DataFrame(timeline_rows)
+    fig = px.line(tl, x='Date', y='Capital', color='Agent', markers=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---- Row 6: evolution timeline ----
+st.subheader("🧬 Evolution Timeline")
+if alloc_hist:
+    evo_rows = []
+    for snap in alloc_hist:
+        for aid, d in snap['agents'].items():
+            evo_rows.append({
+                'Date': snap['timestamp'],
+                'Agent': aid,
+                'Old Cap': d['old_cap'],
+                'New Cap': d['new_cap'],
+                'Return %': round(d['return'] * 100, 2),
+                'Profit': d['profit'],
+            })
+    st.dataframe(pd.DataFrame(evo_rows), use_container_width=True)
+
+# ---- Row 7: trade log ----
+st.subheader("📜 Trade Log (last 100)")
+trades = results['trade_log']
+if trades:
+    tdf = pd.DataFrame(trades[-100:])
+    cols = ['timestamp', 'agent_id', 'asset', 'side',
+            'filled_shares', 'price', 'filled_value', 'status', 'reason']
+    cols = [c for c in cols if c in tdf.columns]
+    st.dataframe(tdf[cols], use_container_width=True)
+else:
+    st.write("No trades executed.")
+
+# ---- Row 8: parameter drift ----
+st.subheader("🔧 Parameter Drift")
+pc = results.get('param_changes', [])
+if pc:
+    st.dataframe(pd.DataFrame(pc), use_container_width=True)
+else:
+    st.write("No parameter changes recorded.")
+
+# ---- Download ----
+st.download_button(
+    "⬇️ Download results.json",
+    data=json.dumps(results, indent=2, default=str),
+    file_name="results.json",
+    mime="application/json",
+)
