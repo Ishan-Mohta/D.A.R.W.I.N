@@ -20,18 +20,18 @@ from src.agents.registry import STRATEGY_REGISTRY
 from src.main import run_platform
 
 st.set_page_config(
-    page_title="Evolutionary Investment Platform",
+    page_title="D.A.R.W.I.N.",
     layout="wide",
     page_icon="🧬",
 )
 
-st.title("🧬 Evolutionary Investment Platform")
+st.title("D.A.R.W.I.N.")
 st.caption("Multi-agent backtesting where bots compete for capital and evolve.")
 
 # =====================================================================
 # SIDEBAR CONFIG
 # =====================================================================
-st.sidebar.header("⚙️ Configuration")
+st.sidebar.header("Configuration")
 
 num_agents = st.sidebar.slider(
     "Number of agents", 3, 15, 5,
@@ -60,7 +60,7 @@ freq = st.sidebar.radio(
 # ⭐ THE FLAGSHIP CONTROLS
 # =====================================================================
 st.sidebar.markdown("---")
-st.sidebar.subheader("🎯 Risk Appetite")
+st.sidebar.subheader("Risk Appetite")
 st.sidebar.caption("These two values control the entire fleet's behavior.")
 
 user_risk = st.sidebar.slider(
@@ -83,7 +83,7 @@ assets_input = st.sidebar.text_input(
     "Assets (comma-separated)", value="AAPL,GOOGL,MSFT,SPY"
 )
 
-run_clicked = st.sidebar.button("🚀 Run Backtest", type="primary")
+run_clicked = st.sidebar.button("Run Backtest", type="primary")
 
 # =====================================================================
 # STATE
@@ -121,11 +121,11 @@ if run_clicked:
 results = st.session_state.results
 
 if results is None:
-    st.info("👈 Configure your platform in the sidebar and click **Run Backtest**.")
+    st.info("Configure your platform in the sidebar and click **Run Backtest**.")
     st.stop()
 
 # ---- Show the risk distribution FIRST (the money shot) ----
-st.subheader("🎯 Risk Distribution of the Fleet")
+st.subheader("Risk Distribution of the Fleet")
 st.caption(
     f"User set risk = **{results['risk_appetite']:.1f}** with deviation "
     f"**{results['risk_std']:.1f}**. Each bot sampled its own risk from "
@@ -160,7 +160,7 @@ c4.metric(f"Benchmark ({results['config']['benchmark']})",
           f"{results['benchmark_return'] * 100:+.2f}%")
 
 # ---- Row 2: leaderboard ----
-st.subheader("🏆 Agent Leaderboard")
+st.subheader("Agent Leaderboard")
 
 metrics = results['agent_metrics']
 alloc_hist = results['allocation_history']
@@ -233,7 +233,7 @@ with col_d:
     st.plotly_chart(fig, use_container_width=True)
 
 # ---- Row 5: allocation timeline ----
-st.subheader("📈 Capital Allocation Over Time")
+st.subheader("Capital Allocation Over Time")
 if alloc_hist:
     timeline_rows = []
     for snap in alloc_hist:
@@ -264,7 +264,7 @@ if alloc_hist:
     st.dataframe(pd.DataFrame(evo_rows), use_container_width=True)
 
 # ---- Row 7: trade log ----
-st.subheader("📜 Trade Log (last 100)")
+st.subheader("Trade Log (last 100)")
 trades = results['trade_log']
 if trades:
     tdf = pd.DataFrame(trades[-100:])
@@ -276,7 +276,7 @@ else:
     st.write("No trades executed.")
 
 # ---- Row 8: parameter drift ----
-st.subheader("🔧 Parameter Drift")
+st.subheader("Parameter Drift")
 pc = results.get('param_changes', [])
 if pc:
     st.dataframe(pd.DataFrame(pc), use_container_width=True)
