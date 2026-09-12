@@ -23,6 +23,7 @@ from src.agents.ml_agent import MLAgent
 from src.agents.momentum_agent import MomentumAgent
 from src.agents.risk_parity_agent import RiskParityAgent
 from src.utils.logger import get_logger
+from src.agents.news_agent import NewsAgent
 
 logger = get_logger(__name__)
 
@@ -33,6 +34,7 @@ STRATEGY_REGISTRY = {
     'ml': MLAgent,
     'risk_parity': RiskParityAgent,
     'contrarian': ContrarianAgent,
+    'news': NewsAgent,
 }
 
 
