@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+data/historical_data.pkl
+data/results.json
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
