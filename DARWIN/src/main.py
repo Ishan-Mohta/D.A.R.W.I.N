@@ -95,8 +95,13 @@ def run_platform(config_overrides: Dict = None) -> Dict:
     logger.info(f"Loaded {len(market_data)} trading days")
 
     # ---- 2. Agents (with sampled risk levels) ----
+    # If the user did not pick specific strategies, use num_agents from the slider
+    selection = cfg_dict.get('agent_selection')
+    if selection in (None, 'all'):
+        selection = cfg_dict['num_agents']
+    
     agents = build_agents(
-        selection=cfg_dict['agent_selection'],
+        selection=selection,
         assets=cfg_dict['assets'],
         user_risk_appetite=cfg_dict['user_risk_appetite'],
         risk_std=cfg_dict['risk_distribution_std'],

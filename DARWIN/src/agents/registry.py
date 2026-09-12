@@ -75,7 +75,9 @@ def build_agents(
         names = list(selection)
     elif isinstance(selection, int):
         keys = list(STRATEGY_REGISTRY.keys())
+        # Cycle through strategies to reach the requested count
         names = [keys[i % len(keys)] for i in range(selection)]
+        logger.info(f"Cycling {len(keys)} strategies to build {selection} agents")
     else:
         raise ValueError(f"Unsupported agent_selection: {selection!r}")
 
